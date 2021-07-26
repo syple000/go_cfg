@@ -4,7 +4,7 @@ import "fmt"
 
 type stringTrieNode struct {
 	ChildNodes map[byte]*stringTrieNode
-	Match      bool
+	Match      int
 }
 
 type nextStrPos struct {
@@ -19,7 +19,7 @@ type StringTrie struct {
 func newstringTrieNode() *stringTrieNode {
 	return &stringTrieNode{
 		ChildNodes: make(map[byte]*stringTrieNode),
-		Match:      false,
+		Match:      -1,
 	}
 }
 
@@ -30,10 +30,12 @@ func NewStringTrie(strList []string) (*StringTrie, error) {
 	}
 	nodeStrPosMap := make(map[*stringTrieNode][]nextStrPos)
 	nodeStrPosMap[stringTrie.Root] = make([]nextStrPos, 0, len(strList))
+	strIndexMap := make(map[string]int)
 	for index, str := range strList {
 		if len(str) == 0 {
 			return nil, fmt.Errorf("string with index: %d is null", index)
 		}
+		strIndexMap[str] = index
 		nodeStrPosMap[stringTrie.Root] = append(nodeStrPosMap[stringTrie.Root],
 			nextStrPos{Str: str, NextPos: 0})
 	}
@@ -61,7 +63,7 @@ func NewStringTrie(strList []string) (*StringTrie, error) {
 				for _, index := range indexList {
 					value := nextStrPosList[index]
 					if value.NextPos+1 == len(value.Str) {
-						newNode.Match = true
+						newNode.Match = strIndexMap[value.Str]
 					} else {
 						value.NextPos += 1
 						nodeStrPosMap[newNode] = append(nodeStrPosMap[newNode], value)
@@ -77,16 +79,16 @@ func NewStringTrie(strList []string) (*StringTrie, error) {
 	return stringTrie, nil
 }
 
-func (trie *StringTrie) IsIn(str string) bool {
+func (trie *StringTrie) Match(str string) int {
 	if trie.Root == nil {
-		return false
+		return -1
 	}
 	node := trie.Root
 	for _, b := range []byte(str) {
 		if nextNode, ok := node.ChildNodes[b]; ok {
 			node = nextNode
 		} else {
-			return false
+			return -1
 		}
 	}
 	return node.Match

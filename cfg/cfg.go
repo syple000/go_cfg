@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
+	"strconv"
 )
 
 const (
@@ -23,7 +24,7 @@ type nextExpPos struct {
 	NextPos  int
 }
 
-func NewNextExpPos(expIndex int, nextPos int) nextExpPos {
+func newNextExpPos(expIndex int, nextPos int) nextExpPos {
 	return nextExpPos{ExpIndex: expIndex, NextPos: nextPos}
 }
 
@@ -65,6 +66,13 @@ type CFGEngine struct {
 	GenSymbolList   []string
 	StartGenSymbol  string
 	NullFinalSymbol string
+}
+
+type CFGMatcher struct {
+	Engine      *CFGEngine
+	StatusStack []int
+	SymbolIdMap map[string]int
+	OK          bool
 }
 
 // 返回值表示是否有变更，假如src包含dest，则返回false，否则true
@@ -131,26 +139,33 @@ func isIn(symbol string, symbolSet map[string]int) bool {
 }
 
 func genGenSymbolNullInfoMap(expList [][]string,
-	genSymbolClosureMap map[string]map[int]int,
 	finalSymbolSet map[string]int,
 	genSymbolSet map[string]int,
 	nullFinalSymbol string) map[string]int {
 
+	genSymbolExpMap := make(map[string]map[int]int)
+	for index, exp := range expList {
+		if _, ok := genSymbolExpMap[exp[0]]; !ok {
+			genSymbolExpMap[exp[0]] = make(map[int]int)
+		}
+		genSymbolExpMap[exp[0]][index] = 0
+	}
+
 	genSymbolNullInfoMap := make(map[string]int)
-	for genSymbol := range genSymbolClosureMap {
+	for genSymbol := range genSymbolExpMap {
 		genSymbolNullInfoMap[genSymbol] = unknownExp
 	}
 
 	for {
 		changed := false
-		for genSymbol, expIndexSet := range genSymbolClosureMap {
+		for genSymbol, expIndexSet := range genSymbolExpMap {
 			curNullInfo := genSymbolNullInfoMap[genSymbol]
 			if curNullInfo == nullExp || curNullInfo == notNullExp {
 				continue
 			}
 			isGenSymbolNull := notNullExp
 			for expIndex := range expIndexSet {
-				isNull := -1
+				isNull := nullExp
 				exp := expList[expIndex]
 				for i := 1; i < len(exp); i++ {
 					if isIn(exp[i], finalSymbolSet) {
@@ -164,11 +179,10 @@ func genGenSymbolNullInfoMap(expList [][]string,
 							break
 						} else if genSymbolNullInfoMap[exp[i]] == unknownExp {
 							isNull = unknownExp
-							break
 						}
 					}
 				}
-				if isNull == -1 {
+				if isNull == nullExp {
 					isGenSymbolNull = nullExp
 					break
 				}
@@ -226,7 +240,7 @@ func genGenSymbolFirstFinalSymbolSetMap(expList [][]string,
 				genSymbolFirstFinalSymbolSetMap[genSymbol] = v
 			} else {
 				changed = true
-				genSymbolFirstFinalSymbolSetMap[genSymbol] = v
+				genSymbolFirstFinalSymbolSetMap[genSymbol] = firstFinalSymbolSet
 			}
 		}
 		if !changed {
@@ -260,7 +274,9 @@ func genGenSymbolNextFinalSymbolSetMap(expList [][]string,
 						mergeStringSet(v, nextFinalSymbolSet)
 						tmpGenSymbolNextFinalSymbolSetMap[exp[i]] = v
 					} else {
-						tmpGenSymbolNextFinalSymbolSetMap[exp[i]] = v
+						m := make(map[string]int)
+						mergeStringSet(m, nextFinalSymbolSet)
+						tmpGenSymbolNextFinalSymbolSetMap[exp[i]] = m
 					}
 					if genSymbolNullInfoMap[exp[i]] == nullExp {
 						mergeStringSet(nextFinalSymbolSet, genSymbolFirstFinalSymbolSetMap[exp[i]])
@@ -303,7 +319,8 @@ func serializeStatusMap(m map[nextExpPos]int) string {
 
 	var buffer bytes.Buffer
 	for _, key := range keys {
-		buffer.WriteString("{" + string(rune(key.ExpIndex)) + ":" + string(rune(key.NextPos)) + "}")
+		buffer.WriteString("{" + strconv.FormatInt(int64(key.ExpIndex), 10) + ":" +
+			strconv.FormatInt(int64(key.NextPos), 10) + "}")
 	}
 	return buffer.String()
 }
@@ -318,7 +335,7 @@ func genStatusTable(expList [][]string,
 
 	initStatus := make(map[nextExpPos]int)
 	for expIndex := range genSymbolClosureMap[startGenSymbol] {
-		initStatus[NewNextExpPos(expIndex, 0)] = 0
+		initStatus[newNextExpPos(expIndex, 0)] = 0
 	}
 	statusArray := make([]map[nextExpPos]int, 0)
 	statusMap := make(map[string]int)
@@ -359,13 +376,15 @@ func genStatusTable(expList [][]string,
 					if _, ok := newStatusMap[symbol]; !ok {
 						newStatusMap[symbol] = make(map[nextExpPos]int)
 					}
-					newStatusMap[symbol][NewNextExpPos(expIndex, expPos+1)] = 0
+					newStatusMap[symbol][newNextExpPos(expIndex, expPos+1)] = 0
 					expPos++
 					// 判断下一个元素是否是generate symbol，假如是，将该元素的所有closure的表达式加入集合
-					nextSymbol := exp[expPos+1]
-					if closure, ok := genSymbolClosureMap[nextSymbol]; ok {
-						for expIndex := range closure {
-							newStatusMap[symbol][NewNextExpPos(expIndex, 0)] = 0
+					if expPos+1 < len(exp) {
+						nextSymbol := exp[expPos+1]
+						if closure, ok := genSymbolClosureMap[nextSymbol]; ok {
+							for expIndex := range closure {
+								newStatusMap[symbol][newNextExpPos(expIndex, 0)] = 0
+							}
 						}
 					}
 				}
@@ -389,8 +408,10 @@ func genStatusTable(expList [][]string,
 					transTable[symbol][index] = newAction(moveon, v)
 				}
 			}
+			index++
 		}
 	}
+	fmt.Printf("trans table:\n%v\nstatus array:\n%v\n", transTable, statusArray)
 	// 整理状态表为
 	// --\--    symbol_id
 	// status
@@ -435,7 +456,7 @@ func NewCFGEngine(finalSymbolList []string,
 	}
 	// 校验exp list的同时，将同一个生成符号的数据进行归类
 	for _, exp := range expList {
-		if len(exp) <= 2 {
+		if len(exp) < 2 {
 			return nil, fmt.Errorf("exp: %v invalid", exp)
 		}
 		if _, ok := genSymbolSet[exp[0]]; !ok {
@@ -468,8 +489,7 @@ func NewCFGEngine(finalSymbolList []string,
 		}
 	}
 
-	genSymbolNullInfoMap := genGenSymbolNullInfoMap(expList, genSymbolClosureMap, finalSymbolSet,
-		genSymbolSet, nullFinalSymbol)
+	genSymbolNullInfoMap := genGenSymbolNullInfoMap(expList, finalSymbolSet, genSymbolSet, nullFinalSymbol)
 	for genSymbol, nullInfo := range genSymbolNullInfoMap {
 		if nullInfo == unknownExp {
 			return nil, fmt.Errorf("generate symbol: %s null info unknown", genSymbol)
@@ -482,6 +502,9 @@ func NewCFGEngine(finalSymbolList []string,
 	genSymbolNextFinalSymbolSetMap := genGenSymbolNextFinalSymbolSetMap(expList, genSymbolFirstFinalSymbolSetMap,
 		genSymbolNullInfoMap, finalSymbolSet, genSymbolSet, nullFinalSymbol)
 
+	fmt.Printf("closure:\n%v\nsymbol null info map:\n%v\nfirst final symbol set:\n%v\nnext final symbol set:\n%v\n",
+		genSymbolClosureMap, genSymbolNullInfoMap, genSymbolFirstFinalSymbolSetMap, genSymbolNextFinalSymbolSetMap)
+
 	statusTable := genStatusTable(expList, genSymbolClosureMap, genSymbolNextFinalSymbolSetMap, finalSymbolList,
 		genSymbolList, startGenSymbol)
 
@@ -493,4 +516,80 @@ func NewCFGEngine(finalSymbolList []string,
 		StartGenSymbol:  startGenSymbol,
 		NullFinalSymbol: nullFinalSymbol,
 	}, nil
+}
+
+func NewCFGMatcher(engine *CFGEngine) *CFGMatcher {
+	matcher := CFGMatcher{
+		Engine:      engine,
+		StatusStack: make([]int, 0, 16),
+		OK:          true,
+	}
+	matcher.StatusStack = append(matcher.StatusStack, 0)
+
+	matcher.SymbolIdMap = make(map[string]int)
+	for i := 0; i < len(engine.FinalSymbolList); i++ {
+		matcher.SymbolIdMap[engine.FinalSymbolList[i]] = i
+	}
+	for i := len(engine.FinalSymbolList); i < len(engine.FinalSymbolList)+len(engine.GenSymbolList); i++ {
+		matcher.SymbolIdMap[engine.GenSymbolList[i-len(engine.FinalSymbolList)]] = i
+	}
+
+	return &matcher
+}
+
+func (matcher *CFGMatcher) NextSymbol(symbol string) (bool, error) {
+	if !matcher.OK {
+		return false, fmt.Errorf("matcher is not ok")
+	}
+	if id, ok := matcher.SymbolIdMap[symbol]; !ok {
+		return false, fmt.Errorf("symbol: %s not found", symbol)
+	} else {
+		return matcher.nextSymbolId(id)
+	}
+}
+
+func (matcher *CFGMatcher) NextSymbolId(symbolId int) (bool, error) {
+	if !matcher.OK {
+		return false, fmt.Errorf("matcher is not ok")
+	}
+	if symbolId < 0 || symbolId >= len(matcher.SymbolIdMap) {
+		return false, fmt.Errorf("symbol id: %d is invalid", symbolId)
+	}
+	return matcher.nextSymbolId(symbolId)
+}
+
+// 空符号永远不会被作为参数，所以在匹配异常时，需要尝试空符号
+func (matcher *CFGMatcher) nextSymbolId(symbolId int) (bool, error) {
+	for {
+		curSatus := matcher.StatusStack[len(matcher.StatusStack)-1]
+		action := matcher.Engine.StatusTable[curSatus][symbolId]
+		if action.Act == unknown {
+			// 考虑空符号
+			action = matcher.Engine.StatusTable[curSatus][matcher.SymbolIdMap[matcher.Engine.NullFinalSymbol]]
+			if action.Act != moveon {
+				matcher.OK = false
+				return false, fmt.Errorf("symbol id: %d match fail", symbolId)
+			}
+			matcher.StatusStack = append(matcher.StatusStack, action.Arg)
+			continue
+		}
+		if action.Act == moveon {
+			matcher.StatusStack = append(matcher.StatusStack, action.Arg)
+			return true, nil
+		} else {
+			// reduce
+			exp := matcher.Engine.ExpList[action.Arg]
+			for i := 1; i < len(exp); i++ {
+				matcher.StatusStack = matcher.StatusStack[0 : len(matcher.StatusStack)-1]
+			}
+			curSatus = matcher.StatusStack[len(matcher.StatusStack)-1]
+			action = matcher.Engine.StatusTable[curSatus][matcher.SymbolIdMap[exp[0]]]
+			if action.Act != moveon {
+				matcher.OK = false
+				return false, fmt.Errorf("symbol id: %d reduce by: %v but moveon fail", symbolId, exp)
+			}
+			matcher.StatusStack = append(matcher.StatusStack, action.Arg)
+			continue
+		}
+	}
 }

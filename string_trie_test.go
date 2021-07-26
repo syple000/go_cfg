@@ -8,25 +8,25 @@ import (
 
 func TestStringTrie(t *testing.T) {
 	tr, _ := trie.NewStringTrie([]string{"abc", "abcd", "ac", "bc"})
-	if tr.IsIn("a") {
+	if tr.Match("a") != -1 {
 		t.Errorf("a is not in trie but found")
 	}
-	if tr.IsIn("b") {
+	if tr.Match("b") != -1 {
 		t.Errorf("b is not in trie but found")
 	}
-	if !tr.IsIn("abc") {
+	if tr.Match("abc") != 0 {
 		t.Errorf("abc is in trie but not found")
 	}
-	if !tr.IsIn("abcd") {
+	if tr.Match("abcd") != 1 {
 		t.Errorf("abcd is in trie but not found")
 	}
-	if tr.IsIn("abcde") {
+	if tr.Match("abcde") != -1 {
 		t.Errorf("abcde is not in trie but found")
 	}
-	if !tr.IsIn("bc") {
+	if tr.Match("bc") != 3 {
 		t.Errorf("bc is in trie but not found")
 	}
-	if tr.IsIn("bcd") {
+	if tr.Match("bcd") != -1 {
 		t.Errorf("bcd is not in trie but found")
 	}
 }
