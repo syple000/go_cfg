@@ -19,6 +19,30 @@ const (
 	moveon
 )
 
+type CFGEngine struct {
+	ExpList         [][]string
+	StatusTable     [][]action
+	FinalSymbolList []string
+	GenSymbolList   []string
+	StartGenSymbol  string
+	NullFinalSymbol string
+}
+
+type CFGMatcher struct {
+	Engine            *CFGEngine
+	Analyzer          CFGAnalyzer
+	StatusStack       []int
+	SymbolSymbolIdMap map[string]int
+	SymbolIdSymbolMap map[int]string
+	OK                bool
+}
+
+// matcher作为参数非必要，但一般会提供很多方便的信息
+type CFGAnalyzer interface {
+	Moveon(matcher *CFGMatcher, symbolId int, obj string)
+	Reduce(matcher *CFGMatcher, expIndex int)
+}
+
 type nextExpPos struct {
 	ExpIndex int
 	NextPos  int
@@ -57,30 +81,6 @@ type action struct {
 
 func newAction(act int, arg int) action {
 	return action{Act: act, Arg: arg}
-}
-
-type CFGEngine struct {
-	ExpList         [][]string
-	StatusTable     [][]action
-	FinalSymbolList []string
-	GenSymbolList   []string
-	StartGenSymbol  string
-	NullFinalSymbol string
-}
-
-type CFGMatcher struct {
-	Engine            *CFGEngine
-	Analyzer          CFGAnalyzer
-	StatusStack       []int
-	SymbolSymbolIdMap map[string]int
-	SymbolIdSymbolMap map[int]string
-	OK                bool
-}
-
-// matcher作为参数非必要，但一般会提供很多方便的信息
-type CFGAnalyzer interface {
-	Moveon(matcher *CFGMatcher, symbolId int)
-	Reduce(matcher *CFGMatcher, expIndex int)
 }
 
 // 返回值表示是否有变更，假如src包含dest，则返回false，否则true
@@ -549,43 +549,43 @@ func NewCFGMatcher(engine *CFGEngine, analyzer CFGAnalyzer) *CFGMatcher {
 	return &matcher
 }
 
-func (matcher *CFGMatcher) NextSymbol(symbol string) (bool, error) {
+func (matcher *CFGMatcher) NextSymbol(symbol string, obj string) (bool, error) {
 	if !matcher.OK {
 		return false, fmt.Errorf("matcher is not ok")
 	}
 	if id, ok := matcher.SymbolSymbolIdMap[symbol]; !ok {
 		return false, fmt.Errorf("symbol: %s not found", symbol)
 	} else {
-		return matcher.nextSymbolId(id)
+		return matcher.nextSymbolId(id, obj)
 	}
 }
 
-func (matcher *CFGMatcher) NextSymbolId(symbolId int) (bool, error) {
+func (matcher *CFGMatcher) NextSymbolId(symbolId int, obj string) (bool, error) {
 	if !matcher.OK {
 		return false, fmt.Errorf("matcher is not ok")
 	}
 	if symbolId < 0 || symbolId >= len(matcher.SymbolSymbolIdMap) {
 		return false, fmt.Errorf("symbol id: %d is invalid", symbolId)
 	}
-	return matcher.nextSymbolId(symbolId)
+	return matcher.nextSymbolId(symbolId, obj)
 }
 
-func (matcher *CFGMatcher) moveon(symbolId int) {
+func (matcher *CFGMatcher) moveon(symbolId int, obj string) {
 	if matcher.Analyzer != nil {
-		matcher.Analyzer.Moveon(matcher, symbolId)
+		matcher.Analyzer.Moveon(matcher, symbolId, obj)
 	}
 	// else do nothing
 }
 
-func (matcher *CFGMatcher) reduce(symbolId int) {
+func (matcher *CFGMatcher) reduce(expIndex int) {
 	if matcher.Analyzer != nil {
-		matcher.Analyzer.Reduce(matcher, symbolId)
+		matcher.Analyzer.Reduce(matcher, expIndex)
 	}
 	// else do nothing
 }
 
 // 空符号永远不会被作为参数，所以在匹配异常时，需要尝试空符号
-func (matcher *CFGMatcher) nextSymbolId(symbolId int) (bool, error) {
+func (matcher *CFGMatcher) nextSymbolId(symbolId int, obj string) (bool, error) {
 	for {
 		curSatus := matcher.StatusStack[len(matcher.StatusStack)-1]
 		action := matcher.Engine.StatusTable[curSatus][symbolId]
@@ -596,12 +596,12 @@ func (matcher *CFGMatcher) nextSymbolId(symbolId int) (bool, error) {
 				matcher.OK = false
 				return false, fmt.Errorf("symbol id: %d match fail", symbolId)
 			}
-			matcher.moveon(matcher.SymbolSymbolIdMap[matcher.Engine.NullFinalSymbol])
+			matcher.moveon(matcher.SymbolSymbolIdMap[matcher.Engine.NullFinalSymbol], "")
 			matcher.StatusStack = append(matcher.StatusStack, action.Arg)
 			continue
 		}
 		if action.Act == moveon {
-			matcher.moveon(symbolId)
+			matcher.moveon(symbolId, obj)
 			matcher.StatusStack = append(matcher.StatusStack, action.Arg)
 			return true, nil
 		} else {

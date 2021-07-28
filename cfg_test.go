@@ -9,8 +9,8 @@ import (
 
 type EchoAnalyzer struct{}
 
-func (analyzer *EchoAnalyzer) Moveon(matcher *cfg.CFGMatcher, symbolId int) {
-	fmt.Printf("Moveon: %s\n", matcher.SymbolIdSymbolMap[symbolId])
+func (analyzer *EchoAnalyzer) Moveon(matcher *cfg.CFGMatcher, symbolId int, obj string) {
+	fmt.Printf("Moveon: %s    value: %s\n", matcher.SymbolIdSymbolMap[symbolId], obj)
 }
 
 func (analyzer *EchoAnalyzer) Reduce(matcher *cfg.CFGMatcher, expIndex int) {
@@ -71,46 +71,46 @@ func TestCFGMatcher(t *testing.T) {
 	echoAnalyzer := EchoAnalyzer{}
 	matcher := cfg.NewCFGMatcher(engine, &echoAnalyzer)
 
-	if ok, err := matcher.NextSymbol("num"); !ok {
+	if ok, err := matcher.NextSymbol("num", "5"); !ok {
 		t.Errorf("match fail, %v", err)
 	}
-	if ok, err := matcher.NextSymbol("+"); !ok {
+	if ok, err := matcher.NextSymbol("+", "+"); !ok {
 		t.Errorf("match fail, %v", err)
 	}
-	if ok, err := matcher.NextSymbol("num"); !ok {
+	if ok, err := matcher.NextSymbol("num", "3"); !ok {
 		t.Errorf("match fail, %v", err)
 	}
-	if ok, err := matcher.NextSymbol("-"); !ok {
+	if ok, err := matcher.NextSymbol("-", "-"); !ok {
 		t.Errorf("match fail, %v", err)
 	}
-	if ok, err := matcher.NextSymbol("num"); !ok {
+	if ok, err := matcher.NextSymbol("num", "4"); !ok {
 		t.Errorf("match fail, %v", err)
 	}
-	if ok, err := matcher.NextSymbol(";"); !ok {
+	if ok, err := matcher.NextSymbol(";", ";"); !ok {
 		t.Errorf("match fail, %v", err)
 	}
-	if ok, err := matcher.NextSymbol("num"); !ok {
+	if ok, err := matcher.NextSymbol("num", "5"); !ok {
 		t.Errorf("match fail, %v", err)
 	}
-	if ok, err := matcher.NextSymbol("+"); !ok {
+	if ok, err := matcher.NextSymbol("+", "+"); !ok {
 		t.Errorf("match fail, %v", err)
 	}
-	if ok, err := matcher.NextSymbol("num"); !ok {
+	if ok, err := matcher.NextSymbol("num", "9"); !ok {
 		t.Errorf("match fail, %v", err)
 	}
-	if ok, err := matcher.NextSymbol(";"); !ok {
+	if ok, err := matcher.NextSymbol(";", ";"); !ok {
 		t.Errorf("match fail, %v", err)
 	}
-	if ok, err := matcher.NextSymbol("$"); !ok {
+	if ok, err := matcher.NextSymbol("$", "$"); !ok {
 		t.Errorf("match fail, %v", err)
 	}
 
-	if ok, err := matcher.NextSymbol("num"); ok {
+	if ok, err := matcher.NextSymbol("num", "4"); ok {
 		t.Errorf("match succ but expect fail, %v", err)
 	}
 
 	matcher = cfg.NewCFGMatcher(engine, nil)
-	if ok, err := matcher.NextSymbol("$"); !ok {
+	if ok, err := matcher.NextSymbol("$", "$"); !ok {
 		t.Errorf("match fail, %v", err)
 	}
 }
