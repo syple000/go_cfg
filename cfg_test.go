@@ -27,15 +27,17 @@ func TestNewCFGEngine(t *testing.T) {
 	 */
 	engine, err := cfg.NewCFGEngine(
 		[]string{"$", "null", ";", "+", "-", "num"},
+		map[string]int{"+": 1, "-": 1},
 		[]string{"BEGIN", "S", "AS"},
 		[][]string{
 			{"BEGIN", "S", "$"},
 			{"S", "null"},
 			{"S", "AS", ";", "S"},
-			{"AS", "AS", "+", "num"},
-			{"AS", "AS", "-", "num"},
+			{"AS", "AS", "+", "AS"},
+			{"AS", "AS", "-", "AS"},
 			{"AS", "num"},
 		},
+		map[int]int{},
 		"BEGIN",
 		"null",
 	)
@@ -55,15 +57,17 @@ func TestCFGMatcher(t *testing.T) {
 	 */
 	engine, _ := cfg.NewCFGEngine(
 		[]string{"$", "null", ";", "+", "-", "num"},
+		map[string]int{"+": -1, "-": -1},
 		[]string{"BEGIN", "S", "AS"},
 		[][]string{
 			{"BEGIN", "S", "$"},
 			{"S", "null"},
 			{"S", "AS", ";", "S"},
-			{"AS", "AS", "+", "num"},
-			{"AS", "AS", "-", "num"},
+			{"AS", "AS", "+", "AS"},
+			{"AS", "AS", "-", "AS"},
 			{"AS", "num"},
 		},
+		map[int]int{},
 		"BEGIN",
 		"null",
 	)

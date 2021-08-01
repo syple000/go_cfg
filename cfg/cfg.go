@@ -333,13 +333,14 @@ func serializeStatusMap(m map[nextExpPos]int) string {
 	return buffer.String()
 }
 
-// 默认规约具有最高优先级
 func genStatusTable(expList [][]string,
+	expPriorList []int,
 	genSymbolClosureMap map[string]map[int]int,
 	genSymbolNextFinalSymbolSetMap map[string]map[string]int,
 	finalSymbolList []string,
+	finalSymbolPriorMap map[string]int,
 	genSymbolList []string,
-	startGenSymbol string) [][]action {
+	startGenSymbol string) ([][]action, error) {
 
 	initStatus := make(map[nextExpPos]int)
 	for expIndex := range genSymbolClosureMap[startGenSymbol] {
@@ -374,10 +375,14 @@ func genStatusTable(expList [][]string,
 							transTable[firstFinalSymbol] = make(map[int]action)
 						}
 						if v, ok := transTable[firstFinalSymbol][index]; ok {
-							fmt.Printf("status: %d reduce by following: %s, but conflict with reduce exp: %d, rewrite",
-								index, firstFinalSymbol, v.Arg)
+							if expPriorList[v.Arg] < expPriorList[expIndex] {
+								transTable[firstFinalSymbol][index] = newAction(reduce, expIndex)
+							} else if expPriorList[v.Arg] == expPriorList[expIndex] {
+								return nil, fmt.Errorf("reduce conflict: %d, %d", expPriorList[v.Arg], expIndex)
+							}
+						} else {
+							transTable[firstFinalSymbol][index] = newAction(reduce, expIndex)
 						}
-						transTable[firstFinalSymbol][index] = newAction(reduce, expIndex)
 					}
 				} else {
 					symbol := exp[expPos+1]
@@ -402,9 +407,11 @@ func genStatusTable(expList [][]string,
 					transTable[symbol] = make(map[int]action)
 				}
 				if v, ok := transTable[symbol][index]; ok {
-					fmt.Printf("status: %d moveon by %s, but conflict with reduce exp: %d, skip",
-						index, symbol, v.Arg)
-					continue
+					if expPriorList[v.Arg] > finalSymbolPriorMap[symbol] {
+						continue
+					} else if expPriorList[v.Arg] == finalSymbolPriorMap[symbol] {
+						return nil, fmt.Errorf("reduce and moveon conflict: %d, %s", v.Arg, symbol)
+					}
 				}
 				infoStr := serializeStatusMap(info)
 				if v, ok := statusMap[infoStr]; !ok {
@@ -419,7 +426,6 @@ func genStatusTable(expList [][]string,
 			index++
 		}
 	}
-	fmt.Printf("trans table:\n%v\nstatus array:\n%v\n", transTable, statusArray)
 	// 整理状态表为
 	// --\--    symbol_id
 	// status
@@ -439,12 +445,14 @@ func genStatusTable(expList [][]string,
 			table[status][symbolIdMap[symbol]] = act
 		}
 	}
-	return table
+	return table, nil
 }
 
 func NewCFGEngine(finalSymbolList []string,
+	finalSymbolPriorMap map[string]int,
 	genSymbolList []string,
 	expList [][]string,
+	expPriorMap map[int]int,
 	startGenSymbol string,
 	nullFinalSymbol string) (*CFGEngine, error) {
 	// 校验初始化数据是否完全正确
@@ -476,6 +484,20 @@ func NewCFGEngine(finalSymbolList []string,
 			if !inFinalSymbolList && !inGenSymbolList {
 				return nil, fmt.Errorf("symbol: %s not found in symbol list", symbol)
 			}
+		}
+	}
+	// 校验exp prior合法, 默认为0
+	expPriorList := make([]int, len(expList))
+	for expIndex, prior := range expPriorMap {
+		if expIndex < 0 || expIndex >= len(expList) {
+			return nil, fmt.Errorf("index in exp prior map out of range: %d", expIndex)
+		}
+		expPriorList[expIndex] = prior
+	}
+	// 校验final symbol prior合法，默认为0
+	for finalSymbol := range finalSymbolPriorMap {
+		if _, ok := finalSymbolSet[finalSymbol]; !ok {
+			return nil, fmt.Errorf("final symbol in final symbol prior map not found: %s", finalSymbol)
 		}
 	}
 
@@ -510,11 +532,12 @@ func NewCFGEngine(finalSymbolList []string,
 	genSymbolNextFinalSymbolSetMap := genGenSymbolNextFinalSymbolSetMap(expList, genSymbolFirstFinalSymbolSetMap,
 		genSymbolNullInfoMap, finalSymbolSet, genSymbolSet, nullFinalSymbol)
 
-	fmt.Printf("closure:\n%v\nsymbol null info map:\n%v\nfirst final symbol set:\n%v\nnext final symbol set:\n%v\n",
-		genSymbolClosureMap, genSymbolNullInfoMap, genSymbolFirstFinalSymbolSetMap, genSymbolNextFinalSymbolSetMap)
+	statusTable, err := genStatusTable(expList, expPriorList, genSymbolClosureMap, genSymbolNextFinalSymbolSetMap,
+		finalSymbolList, finalSymbolPriorMap, genSymbolList, startGenSymbol)
 
-	statusTable := genStatusTable(expList, genSymbolClosureMap, genSymbolNextFinalSymbolSetMap, finalSymbolList,
-		genSymbolList, startGenSymbol)
+	if err != nil {
+		return nil, err
+	}
 
 	return &CFGEngine{
 		ExpList:         expList,
